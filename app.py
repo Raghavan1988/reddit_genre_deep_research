@@ -116,11 +116,11 @@ def generate_report(genre: str, threads: List[Dict], questions: List[str], timer
     prompt = (
         f"You are a senior story analyst assisting film writers and producers who are exploring the  **{genre}**. You have mined sub reddit content on Reddit audience data for **{genre}**. "
         "First, give a one-paragraph overall audience sentiment snapshot for the genre. Then, for EACH question provided, answer in ≤2 paragraphs with citations [Title](URL). "
-        ""It is important to add citations in [Title](URL) form right after every key evidence point. "
+        "It is important to add citations in [Title](URL) form right after every key evidence point.\n"
         "Afterward, create three separate sections each with **3 actionable insights** (bullet list) backed by evidence: \n" 
         "* For Directors\n* For Storywriters / Script Developers\n* For Producer‑Investors & Marketers.\n" 
         "Conclude with a short 2‑sentence market‑fit summary."
-        "Ensure a Readability sore of 60-70 for the report as measured by Flesch reading ease and write with citations"
+        "Ensure a *Readability sore of 60-70* for the report as measured by *Flesch reading ease* and write with citations"
     )
 
     msgs = [
