@@ -176,4 +176,4 @@ if st.button("Run research 🚀"):
 
     st.success(f"Summaries ready: {len(threads)} threads from r/{subreddit}")
     with st.expander("🔍 Gists & insights"):
-        st.json([{"title":t['title'], **t['summary']}";
+        st.json([{"title":t['title'], **t['summary']}");
