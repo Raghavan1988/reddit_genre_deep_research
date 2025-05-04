@@ -94,8 +94,8 @@ def summarise_threads(threads: List[Dict], progress_bar, status_slot, sample_slo
             {
                 "role": "system",
                 "content": (
-                    "You are a research assistant. For each Reddit thread JSON {id:text} return JSON with keys "
-                    "gist (≤25 words), insight1, insight2, sentiment (positive/neutral/negative)."
+                    "You are a movie buff, who is a storyline research assistant trying to understand what today's audience want from the story. Infer what redditors want from storylines of this genre. For each Reddit thread JSON {id:text} return JSON with keys "
+                    "gist (50 words), insight1, insight2, sentiment (positive/neutral/negative)."
                 ),
             },
             {"role": "user", "content": json.dumps(payload)},
