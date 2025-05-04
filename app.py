@@ -173,6 +173,18 @@ if st.button("Run research 🚀"):
     with st.spinner("⛏️ Fetching threads + comments…"):
         threads = fetch_threads(subreddit, n_posts, tick)
 
+    # OPTIONAL RAW PREVIEW ──────────────────────────────────────────────────
+    with st.expander("📄 Browse raw posts & comments"):
+        for t in threads:
+            st.markdown(f"### {t['title']}")
+            st.markdown(f"[Open on Reddit]({t['url']}) · *{t['created']}*")
+            if t["body"]:
+                st.markdown(t["body"])
+            if t["comments"]:
+                st.markdown("**Top‑level comments (truncated):**")
+                st.text(t["comments"][:1500] + ("…" if len(t["comments"]) > 1500 else ""))
+            st.markdown("---")
+
     # SUMMARISE
     progress = st.progress(0.0)
     status = st.empty()
