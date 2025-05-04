@@ -157,7 +157,7 @@ def generate_report(threads: List[Dict], questions: List[str], timer_cb: Callabl
     resp = openai.chat.completions.create(model="o3", messages=msgs)
     draft = resp.choices[0].message.content
     timer_cb(0)
-    final = reflect_and_verify(draft, corpus, timer_cb)
+    final = draft ##reflect_and_verify(draft, corpus, timer_cb)
     return final
 
 # ── UI ──────────────────────────────────────────────────────────────────────
