@@ -1,23 +1,12 @@
 # deep_research_reddit.py
 # ─────────────────────────────────────────────────────────────────────────────
-# • Streamlit assistant for genre‑based Reddit deep research
-# • Verdana 14 pt UI, live side‑bar timer, real‑time progress on summarisation
-# • Pulls last N posts + comments, summarises with OpenAI o3, reflection pass
-# • Shows elapsed time and reference list (title + URL) at the end
-#
-# DEPENDENCIES
-#   pip install streamlit praw openai python-dotenv
-#
-# KEYS (env‑vars or .env file ‑‑ recommended)
-#   OPENAI_API_KEY
-#   REDDIT_CLIENT_ID
-#   REDDIT_CLIENT_SECRET
-#   REDDIT_USER_AGENT="DeepResearch/0.1"
-# RUN
-#   streamlit run deep_research_reddit.py
+# Streamlit assistant for genre‑based Reddit deep research tailored for
+# screen‑writers and producers. Shows live digital timer, random thread previews,
+# real‑time summarisation progress, and a self‑contained final report that
+# directly answers the user’s questions in the chosen genre.
 # ─────────────────────────────────────────────────────────────────────────────
 
-import os, json, time, textwrap
+import os, json, time, random
 from datetime import datetime, timezone
 from typing import List, Dict, Callable
 
@@ -47,7 +36,7 @@ REDDIT_CLIENT_SECRET  = os.getenv("REDDIT_CLIENT_SECRET", "")
 REDDIT_USER_AGENT     = os.getenv("REDDIT_USER_AGENT", "DeepResearch/0.1")
 
 if not all([openai.api_key, REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET]):
-    st.error("🚨 Set your OpenAI & Reddit credentials via env‑vars or a .env file.")
+    st.error("🚨 Set your OpenAI & Reddit credentials via env‑vars or a .env file.")
     st.stop()
 
 # ── REDDIT CLIENT ────────────────────────────────────────────────────────────
@@ -69,10 +58,10 @@ GENRE_DEFAULT_SUB = {
     "thriller": "Thrillers",
 }
 
-def fetch_threads(sub: str, limit: int, timer_cb: Callable[[float], None]) -> List[Dict]:
+def fetch_threads(sub: str, limit: int, timer_cb: Callable[[], None]) -> List[Dict]:
     """Pull newest <limit> threads and all comments."""
     threads = []
-    for idx, post in enumerate(reddit.subreddit(sub).new(limit=limit), 1):
+    for post in reddit.subreddit(sub).new(limit=limit):
         post.comments.replace_more(limit=None)
         comments = " ".join(c.body for c in post.comments.list())
         threads.append({
@@ -83,21 +72,24 @@ def fetch_threads(sub: str, limit: int, timer_cb: Callable[[float], None]) -> Li
             "url": post.url,
             "created": datetime.fromtimestamp(post.created_utc, tz=timezone.utc).strftime("%Y-%m-%d"),
         })
-        timer_cb(0)  # update elapsed display
+        timer_cb()
     return threads
 
 
-def summarise_threads(threads: List[Dict], progress_bar, status_slot, timer_cb: Callable[[float], None], model: str = "o3", batch: int = 6) -> None:
-    """Attach a `summary` dict to each thread in‑place, updating UI."""
+def summarise_threads(threads: List[Dict], progress_bar, status_slot, sample_slot, timer_cb: Callable[[], None], model: str = "o3", batch: int = 6) -> None:
+    """Attach `summary` to each thread; update progress + random preview."""
     total = len(threads)
     done = 0
     for i in range(0, total, batch):
         chunk = threads[i:i + batch]
         payload = {
-            t["id"]: t["title"] + "\n\n" + t["body"][:4000] + "\n\nComments:\n" + t["comments"][:6000]
+            t["id"]: f"{t['title']}\n\n{t['body'][:4000]}\n\nComments:\n{t['comments'][:6000]}"
             for t in chunk
         }
         status_slot.markdown(f"**Summarising:** {chunk[0]['title'][:80]}…")
+        sample_thread = random.choice(threads)
+        sample_slot.markdown(f"*Random thread:* **{sample_thread['title'][:90]}**")
+
         msgs = [
             {
                 "role": "system",
@@ -114,63 +106,48 @@ def summarise_threads(threads: List[Dict], progress_bar, status_slot, timer_cb: 
             t["summary"] = summaries.get(t["id"], {})
         done += len(chunk)
         progress_bar.progress(done / total)
-        timer_cb(0)
-        time.sleep(1)  # politeness
+        timer_cb()
+        time.sleep(0.5)
     status_slot.markdown("**Summarising complete!**")
 
 
-def reflect_and_verify(report: str, corpus: str, timer_cb: Callable[[float], None], model: str = "o3") -> str:
-    msgs = [
-        {
-            "role": "system",
-            "content": (
-                "You are a critical reviewer. Verify that every claim in the ANSWER is supported by the CORPUS. "
-                "If something is unsupported, correct it. Produce a concise, coherent report using the same style, "
-                "adding citations [Title](URL) after each key insight."
-            ),
-        },
-        {"role": "assistant", "content": f"CORPUS:\n{corpus}"},
-        {"role": "assistant", "content": f"ANSWER:\n{report}"},
-    ]
-    resp = openai.chat.completions.create(model=model, messages=msgs)
-    timer_cb(0)
-    return resp.choices[0].message.content
-
-
-def generate_report(threads: List[Dict], questions: List[str], timer_cb: Callable[[float], None]) -> str:
+def generate_report(genre: str, threads: List[Dict], questions: List[str], timer_cb: Callable[[], None]) -> str:
+    """Create a self‑contained report for writers/producers."""
     corpus = "\n\n".join(
         f"{t['title']} – {t['summary'].get('gist','')} [URL]({t['url']})" for t in threads
     )[:15000]
 
     q_block = "\n".join(f"Q{i+1}. {q}" for i, q in enumerate(questions))
+
+    prompt = (
+        "You are a senior story analyst assisting film *writers* and *producers* who are exploring the "
+        f"**{genre.title()}** genre. You have mined Reddit audience discussions. "
+        "First, give a one‑paragraph snapshot of overall audience sentiment for this genre on Reddit. "
+        "Then, answer each research question in its own subsection (≤2 paragraphs each), "
+        "adding citations in [Title](URL) form right after every key evidence point. "
+        "Finish with a bold **3‑point ACTIONABLE INSIGHTS** lists one list for script-story writers (what to emphasise / avoid in a script), each with a citation. one list for  movie producers & distributors and one list for directors"
+    )
+
     msgs = [
-        {
-            "role": "system",
-            "content": (
-                "You are a senior story analyst. Answer each question in 1–2 concise paragraphs. "
-                "After each key insight add a citation in the form [Title](URL). Create sections summarization of the entire reddit thread. Then provide 3 ACTIONABLE insights with evidence"
-            ),
-        },
+        {"role": "system", "content": prompt},
         {"role": "assistant", "content": f"CORPUS ({len(threads)} threads):\n{corpus}"},
         {"role": "user", "content": q_block},
     ]
     resp = openai.chat.completions.create(model="o3", messages=msgs)
-    draft = resp.choices[0].message.content
-    timer_cb(0)
-    final = draft ##reflect_and_verify(draft, corpus, timer_cb)
-    return final
+    timer_cb()
+    return resp.choices[0].message.content
 
 # ── UI ──────────────────────────────────────────────────────────────────────
-st.title("🎬 Reddit Deep‑Research Assistant")
+st.title("🎬 Reddit Audience Intel for Scriptwriters")
 
-# live timer in sidebar
-st.sidebar.header("⏱️ Elapsed")
-clock_slot = st.sidebar.empty()
-start_time_global = time.time()
+# live digital timer in sidebar
+ticker = st.sidebar.empty()
+start_time = time.time()
 
-def update_timer(_):
-    elapsed = time.time() - start_time_global
-    clock_slot.write(f"{elapsed:0.1f} s")
+def tick():
+    elapsed = time.time() - start_time
+    mins, secs = divmod(int(elapsed), 60)
+    ticker.write(f"⏱️ {mins:02d}:{secs:02d}")
 
 col1, col2 = st.columns([2, 1])
 with col1:
@@ -178,18 +155,13 @@ with col1:
 with col2:
     n_posts = st.slider("Threads", 10, 200, 50, step=10)
 
-def_sub = GENRE_DEFAULT_SUB.get(genre_input, "movies")
-subreddit = st.text_input("Subreddit", value=def_sub).strip()
+subreddit = st.text_input("Subreddit", value=GENRE_DEFAULT_SUB.get(genre_input, "movies")).strip()
 
 st.markdown("#### Research questions (1‑5, one per line)")
-qs_text = st.text_area("", "What tropes feel over‑used?\nWhat excites this audience?")
+qs_text = st.text_area("Questions", "What tropes feel over‑used?\nWhat excites this audience?", label_visibility="collapsed")
 questions = [q.strip() for q in qs_text.splitlines() if q.strip()][:5]
 
 if st.button("Run research 🚀"):
-    # reset timer
-    global_start = time.time()
-    start_time_global = global_start  # update for timer fn scope
-
     if not subreddit:
         st.error("Please specify a subreddit.")
         st.stop()
@@ -197,25 +169,26 @@ if st.button("Run research 🚀"):
         st.error("Enter at least one research question.")
         st.stop()
 
-    # FETCH & SUMMARISE with progress
-    with st.spinner("⛏️ Fetching threads + comments…"):
-        threads = fetch_threads(subreddit, n_posts, update_timer)
+    # FETCH
+    with st.spinner("⛏️ Fetching threads + comments…"):
+        threads = fetch_threads(subreddit, n_posts, tick)
 
+    # SUMMARISE
     progress = st.progress(0.0)
-    status_txt = st.empty()
-    with st.spinner("📝 Summarising…"):
-        summarise_threads(threads, progress, status_txt, update_timer)
+    status = st.empty()
+    sample_preview = st.empty()
+    with st.spinner("📝 Summarising…"):
+        summarise_threads(threads, progress, status, sample_preview, tick)
 
     st.success(f"Summarised {len(threads)} threads from r/{subreddit}.")
-    with st.expander("🔍 Gists & insights"):
+    with st.expander("🔍 Gists & insights"):
         st.json([{"title": t["title"], **t["summary"], "url": t["url"]} for t in threads])
 
-    # Report
-    with st.spinner("🧠 Generating research report…"):
-        report_md = generate_report(threads, questions, update_timer)
+    # REPORT
+    with st.spinner("🧠 Crafting final report…"):
+        report_md = generate_report(genre_input, threads, questions, tick)
 
-    st.markdown("## 📊 Research Report")
+    st.markdown("## 📊 Audience‑Driven Report")
     st.markdown(report_md)
 
-    total_elapsed = time.time() - global_start
-    clock_slot.write(f"{total_elapsed:0.1f} s (done)")
+    tick()  # final update
