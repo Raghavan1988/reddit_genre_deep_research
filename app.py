@@ -1,8 +1,8 @@
 # deep_research_reddit.py
 # ─────────────────────────────────────────────────────────────────────────────
 # • Streamlit assistant for genre‑based Reddit deep research
-# • Verdana 14 pt UI, easy‑to‑read markdown with inline citations
-# • Pulls last N posts + comments, summarises with OpenAI o3, reflects
+# • Verdana 14 pt UI, live side‑bar timer, real‑time progress on summarisation
+# • Pulls last N posts + comments, summarises with OpenAI o3, reflection pass
 # • Shows elapsed time and reference list (title + URL) at the end
 #
 # DEPENDENCIES
@@ -19,7 +19,7 @@
 
 import os, json, time, textwrap
 from datetime import datetime, timezone
-from typing import List, Dict
+from typing import List, Dict, Callable
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -30,7 +30,7 @@ import praw
 st.markdown(
     """
     <style>
-    html, body, [class*="css"], .stMarkdown, .stTextInput, .stButton, .stSlider label {
+    html, body, [class*=\"css\"], .stMarkdown, .stTextInput, .stButton, .stSlider label {
         font-family: Verdana, sans-serif !important;
         font-size: 14px !important;
     }
@@ -69,10 +69,10 @@ GENRE_DEFAULT_SUB = {
     "thriller": "Thrillers",
 }
 
-def fetch_threads(sub: str, limit: int) -> List[Dict]:
+def fetch_threads(sub: str, limit: int, timer_cb: Callable[[float], None]) -> List[Dict]:
     """Pull newest <limit> threads and all comments."""
     threads = []
-    for post in reddit.subreddit(sub).new(limit=limit):
+    for idx, post in enumerate(reddit.subreddit(sub).new(limit=limit), 1):
         post.comments.replace_more(limit=None)
         comments = " ".join(c.body for c in post.comments.list())
         threads.append({
@@ -83,17 +83,21 @@ def fetch_threads(sub: str, limit: int) -> List[Dict]:
             "url": post.url,
             "created": datetime.fromtimestamp(post.created_utc, tz=timezone.utc).strftime("%Y-%m-%d"),
         })
+        timer_cb(0)  # update elapsed display
     return threads
 
 
-def summarise_threads(threads: List[Dict], model: str = "o3", batch: int = 6) -> None:
-    """Attach a `summary` dict to each thread in‑place."""
-    for i in range(0, len(threads), batch):
+def summarise_threads(threads: List[Dict], progress_bar, status_slot, timer_cb: Callable[[float], None], model: str = "o3", batch: int = 6) -> None:
+    """Attach a `summary` dict to each thread in‑place, updating UI."""
+    total = len(threads)
+    done = 0
+    for i in range(0, total, batch):
         chunk = threads[i:i + batch]
         payload = {
             t["id"]: t["title"] + "\n\n" + t["body"][:4000] + "\n\nComments:\n" + t["comments"][:6000]
             for t in chunk
         }
+        status_slot.markdown(f"**Summarising:** {chunk[0]['title'][:80]}…")
         msgs = [
             {
                 "role": "system",
@@ -108,17 +112,20 @@ def summarise_threads(threads: List[Dict], model: str = "o3", batch: int = 6) ->
         summaries = json.loads(resp.choices[0].message.content)
         for t in chunk:
             t["summary"] = summaries.get(t["id"], {})
+        done += len(chunk)
+        progress_bar.progress(done / total)
+        timer_cb(0)
         time.sleep(1)  # politeness
+    status_slot.markdown("**Summarising complete!**")
 
 
-def reflect_and_verify(report: str, corpus: str, model: str = "o3") -> str:
-    """Reflection pattern: ask model to verify its own answer against corpus."""
+def reflect_and_verify(report: str, corpus: str, timer_cb: Callable[[float], None], model: str = "o3") -> str:
     msgs = [
         {
             "role": "system",
             "content": (
                 "You are a critical reviewer. Verify that every claim in the ANSWER is supported by the CORPUS. "
-                "If something is unsupported, correct it. Produce a concise, coherent report using the same style," 
+                "If something is unsupported, correct it. Produce a concise, coherent report using the same style, "
                 "adding citations [Title](URL) after each key insight."
             ),
         },
@@ -126,11 +133,11 @@ def reflect_and_verify(report: str, corpus: str, model: str = "o3") -> str:
         {"role": "assistant", "content": f"ANSWER:\n{report}"},
     ]
     resp = openai.chat.completions.create(model=model, messages=msgs)
+    timer_cb(0)
     return resp.choices[0].message.content
 
 
-def generate_report(threads: List[Dict], questions: List[str]) -> str:
-    # Build corpus for prompting + citations map.
+def generate_report(threads: List[Dict], questions: List[str], timer_cb: Callable[[float], None]) -> str:
     corpus = "\n\n".join(
         f"{t['title']} – {t['summary'].get('gist','')} [URL]({t['url']})" for t in threads
     )[:15000]
@@ -141,7 +148,7 @@ def generate_report(threads: List[Dict], questions: List[str]) -> str:
             "role": "system",
             "content": (
                 "You are a senior story analyst. Answer each question in 1–2 concise paragraphs. "
-                "After each key insight add a citation in the form [Title](URL)."
+                "After each key insight add a citation in the form [Title](URL). Create sections summarization of the entire reddit thread. Then provide 3 ACTIONABLE insights with evidence"
             ),
         },
         {"role": "assistant", "content": f"CORPUS ({len(threads)} threads):\n{corpus}"},
@@ -149,12 +156,21 @@ def generate_report(threads: List[Dict], questions: List[str]) -> str:
     ]
     resp = openai.chat.completions.create(model="o3", messages=msgs)
     draft = resp.choices[0].message.content
-    # Reflection pass
-    final = reflect_and_verify(draft, corpus)
+    timer_cb(0)
+    final = reflect_and_verify(draft, corpus, timer_cb)
     return final
 
 # ── UI ──────────────────────────────────────────────────────────────────────
 st.title("🎬 Reddit Deep‑Research Assistant")
+
+# live timer in sidebar
+st.sidebar.header("⏱️ Elapsed")
+clock_slot = st.sidebar.empty()
+start_time_global = time.time()
+
+def update_timer(_):
+    elapsed = time.time() - start_time_global
+    clock_slot.write(f"{elapsed:0.1f} s")
 
 col1, col2 = st.columns([2, 1])
 with col1:
@@ -170,7 +186,10 @@ qs_text = st.text_area("", "What tropes feel over‑used?\nWhat excites this aud
 questions = [q.strip() for q in qs_text.splitlines() if q.strip()][:5]
 
 if st.button("Run research 🚀"):
-    start = time.time()
+    # reset timer
+    global_start = time.time()
+    start_time_global = global_start  # update for timer fn scope
+
     if not subreddit:
         st.error("Please specify a subreddit.")
         st.stop()
@@ -178,11 +197,14 @@ if st.button("Run research 🚀"):
         st.error("Enter at least one research question.")
         st.stop()
 
-    # Fetch & summarise
+    # FETCH & SUMMARISE with progress
     with st.spinner("⛏️ Fetching threads + comments…"):
-        threads = fetch_threads(subreddit, n_posts)
+        threads = fetch_threads(subreddit, n_posts, update_timer)
+
+    progress = st.progress(0.0)
+    status_txt = st.empty()
     with st.spinner("📝 Summarising…"):
-        summarise_threads(threads)
+        summarise_threads(threads, progress, status_txt, update_timer)
 
     st.success(f"Summarised {len(threads)} threads from r/{subreddit}.")
     with st.expander("🔍 Gists & insights"):
@@ -190,10 +212,10 @@ if st.button("Run research 🚀"):
 
     # Report
     with st.spinner("🧠 Generating research report…"):
-        report_md = generate_report(threads, questions)
+        report_md = generate_report(threads, questions, update_timer)
 
     st.markdown("## 📊 Research Report")
     st.markdown(report_md)
 
-    elapsed = time.time() - start
-    st.markdown(f"**Time elapsed:** {elapsed:.1f} seconds")
+    total_elapsed = time.time() - global_start
+    clock_slot.write(f"{total_elapsed:0.1f} s (done)")
