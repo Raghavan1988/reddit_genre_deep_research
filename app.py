@@ -1,14 +1,23 @@
 # deep_research_reddit.py
 # ─────────────────────────────────────────────────────────────────────────────
-# Streamlit assistant for genre‑based Reddit deep research
-# • Verdana 14 pt UI, live side‑bar timer
-# • Optional expander to browse raw PRAW JSON before summarisation
-# • Progress bar & status while summarising
-# • Final self‑contained report with separate 3‑point actionable insights for
-#   Director, Storywriter, Producer/Marketer, plus a reference section.
+# • Streamlit assistant for genre‑based Reddit deep research
+# • Verdana 14 pt UI, live side‑bar timer, real‑time progress on summarisation
+# • Pulls last N posts + comments, summarises with OpenAI o3, reflection pass
+# • Shows elapsed time and reference list (title + URL) at the end
+#
+# DEPENDENCIES
+#   pip install streamlit praw openai python-dotenv
+#
+# KEYS (env‑vars or .env file ‑‑ recommended)
+#   OPENAI_API_KEY
+#   REDDIT_CLIENT_ID
+#   REDDIT_CLIENT_SECRET
+#   REDDIT_USER_AGENT="DeepResearch/0.1"
+# RUN
+#   streamlit run deep_research_reddit.py
 # ─────────────────────────────────────────────────────────────────────────────
 
-import os, json, time, random
+import os, json, time, textwrap
 from datetime import datetime, timezone
 from typing import List, Dict, Callable
 
@@ -38,7 +47,7 @@ REDDIT_CLIENT_SECRET  = os.getenv("REDDIT_CLIENT_SECRET", "")
 REDDIT_USER_AGENT     = os.getenv("REDDIT_USER_AGENT", "DeepResearch/0.1")
 
 if not all([openai.api_key, REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET]):
-    st.error("🚨 Set your OpenAI & Reddit credentials via env‑vars or a .env file.")
+    st.error("🚨 Set your OpenAI & Reddit credentials via env‑vars or a .env file.")
     st.stop()
 
 # ── REDDIT CLIENT ────────────────────────────────────────────────────────────
@@ -60,10 +69,10 @@ GENRE_DEFAULT_SUB = {
     "thriller": "Thrillers",
 }
 
-def fetch_threads(sub: str, limit: int, timer_cb: Callable[[], None]) -> List[Dict]:
+def fetch_threads(sub: str, limit: int, timer_cb: Callable[[float], None]) -> List[Dict]:
     """Pull newest <limit> threads and all comments."""
     threads = []
-    for post in reddit.subreddit(sub).new(limit=limit):
+    for idx, post in enumerate(reddit.subreddit(sub).new(limit=limit), 1):
         post.comments.replace_more(limit=None)
         comments = " ".join(c.body for c in post.comments.list())
         threads.append({
@@ -74,104 +83,139 @@ def fetch_threads(sub: str, limit: int, timer_cb: Callable[[], None]) -> List[Di
             "url": post.url,
             "created": datetime.fromtimestamp(post.created_utc, tz=timezone.utc).strftime("%Y-%m-%d"),
         })
-        timer_cb()
+        timer_cb(0)  # update elapsed display
     return threads
 
 
-def summarise_threads(threads: List[Dict], progress_bar, status_slot, sample_slot, timer_cb: Callable[[], None], model: str = "o3", batch: int = 6) -> None:
-    total, done = len(threads), 0
+def summarise_threads(threads: List[Dict], progress_bar, status_slot, timer_cb: Callable[[float], None], model: str = "o3", batch: int = 6) -> None:
+    """Attach a `summary` dict to each thread in‑place, updating UI."""
+    total = len(threads)
+    done = 0
     for i in range(0, total, batch):
-        chunk = threads[i:i+batch]
+        chunk = threads[i:i + batch]
         payload = {
-            t["id"]: f"{t['title']}\n\n{t['body'][:4000]}\n\nComments:\n{t['comments'][:6000]}"
+            t["id"]: t["title"] + "\n\n" + t["body"][:4000] + "\n\nComments:\n" + t["comments"][:6000]
             for t in chunk
         }
-        status_slot.markdown(f"**Summarising:** {chunk[0]['title'][:90]}…")
-        sample_slot.markdown(random.choice(threads)['title'][:100])
+        status_slot.markdown(f"**Summarising:** {chunk[0]['title'][:80]}…")
         msgs = [
-            {"role": "system", "content": "You are a research assistant. For each Reddit thread JSON {id:text} return JSON with keys gist (≤25 words), insight1, insight2, sentiment (positive/neutral/negative)."},
-            {"role": "user",   "content": json.dumps(payload)},
+            {
+                "role": "system",
+                "content": (
+                    "You are a research assistant. For each Reddit thread JSON {id:text} return JSON with keys "
+                    "gist (≤25 words), insight1, insight2, sentiment (positive/neutral/negative)."
+                ),
+            },
+            {"role": "user", "content": json.dumps(payload)},
         ]
-        summaries = json.loads(openai.chat.completions.create(model=model, messages=msgs).choices[0].message.content)
+        resp = openai.chat.completions.create(model=model, messages=msgs)
+        summaries = json.loads(resp.choices[0].message.content)
         for t in chunk:
             t["summary"] = summaries.get(t["id"], {})
         done += len(chunk)
-        progress_bar.progress(done/total)
-        timer_cb()
-        time.sleep(0.5)
+        progress_bar.progress(done / total)
+        timer_cb(0)
+        time.sleep(1)  # politeness
     status_slot.markdown("**Summarising complete!**")
 
 
-def build_references(threads: List[Dict]) -> str:
-    refs = "\n".join(f"* [{t['title']}]({t['url']})" for t in threads)
-    return f"### References\n{refs}"
+def reflect_and_verify(report: str, corpus: str, timer_cb: Callable[[float], None], model: str = "o3") -> str:
+    msgs = [
+        {
+            "role": "system",
+            "content": (
+                "You are a critical reviewer. Verify that every claim in the ANSWER is supported by the CORPUS. "
+                "If something is unsupported, correct it. Produce a concise, coherent report using the same style, "
+                "adding citations [Title](URL) after each key insight."
+            ),
+        },
+        {"role": "assistant", "content": f"CORPUS:\n{corpus}"},
+        {"role": "assistant", "content": f"ANSWER:\n{report}"},
+    ]
+    resp = openai.chat.completions.create(model=model, messages=msgs)
+    timer_cb(0)
+    return resp.choices[0].message.content
 
 
-def generate_report(genre: str, threads: List[Dict], questions: List[str], timer_cb: Callable[[], None]) -> str:
+def generate_report(threads: List[Dict], questions: List[str], timer_cb: Callable[[float], None]) -> str:
     corpus = "\n\n".join(
         f"{t['title']} – {t['summary'].get('gist','')} [URL]({t['url']})" for t in threads
     )[:15000]
-    q_block = "\n".join(f"Q{i+1}. {q}" for i,q in enumerate(questions))
 
-    prompt = (
-        f"You are a senior story analyst focussed on Reddit audience data for **{genre}**. "
-        "First, give a one-paragraph sentiment snapshot. Then, for EACH question provided, answer in ≤2 paragraphs with citations [Title](URL). "
-        "Afterward, create three separate sections each with **3 actionable insights** (bullet list) backed by evidence: \n" 
-        "* For Directors\n* For Storywriters / Script Developers\n* For Producer‑Investors & Marketers.\n" 
-        "Conclude with a short 2‑sentence market‑fit summary."
-    )
-
+    q_block = "\n".join(f"Q{i+1}. {q}" for i, q in enumerate(questions))
     msgs = [
-        {"role": "system", "content": prompt},
+        {
+            "role": "system",
+            "content": (
+                "You are a senior story analyst. Answer each question in 1–2 concise paragraphs. "
+                "After each key insight add a citation in the form [Title](URL). Create sections summarization of the entire reddit thread. Then provide 3 ACTIONABLE insights with evidence"
+            ),
+        },
         {"role": "assistant", "content": f"CORPUS ({len(threads)} threads):\n{corpus}"},
         {"role": "user", "content": q_block},
     ]
-    report = openai.chat.completions.create(model="o3", messages=msgs).choices[0].message.content
-    timer_cb()
-    return report + "\n\n" + build_references(threads)
+    resp = openai.chat.completions.create(model="o3", messages=msgs)
+    draft = resp.choices[0].message.content
+    timer_cb(0)
+    final = draft ##reflect_and_verify(draft, corpus, timer_cb)
+    return final
 
 # ── UI ──────────────────────────────────────────────────────────────────────
-st.title("🎬 Reddit Audience Deep‑Dive for Creatives")
+st.title("🎬 Reddit Deep‑Research Assistant")
 
-# Digital timer
-time_box = st.sidebar.empty()
-start_time = time.time()
+# live timer in sidebar
+st.sidebar.header("⏱️ Elapsed")
+clock_slot = st.sidebar.empty()
+start_time_global = time.time()
 
-def tick():
-    mins, secs = divmod(int(time.time() - start_time), 60)
-    time_box.write(f"⏱️ {mins:02d}:{secs:02d}")
+def update_timer(_):
+    elapsed = time.time() - start_time_global
+    clock_slot.write(f"{elapsed:0.1f} s")
 
-col1, col2 = st.columns([2,1])
+col1, col2 = st.columns([2, 1])
 with col1:
-    genre = st.text_input("Genre", value="horror").strip().lower()
+    genre_input = st.text_input("Film/TV genre", value="horror").strip().lower()
 with col2:
-    n_posts = st.slider("Threads", 10, 200, 50, 10)
+    n_posts = st.slider("Threads", 10, 200, 50, step=10)
 
-subreddit = st.text_input("Subreddit", value=GENRE_DEFAULT_SUB.get(genre, "movies")).strip()
+def_sub = GENRE_DEFAULT_SUB.get(genre_input, "movies")
+subreddit = st.text_input("Subreddit", value=def_sub).strip()
 
 st.markdown("#### Research questions (1‑5, one per line)")
-qs = st.text_area("Questions", "What tropes feel over‑used?\nWhat excites this audience?", label_visibility="collapsed")
-questions = [q.strip() for q in qs.splitlines() if q.strip()][:5]
+qs_text = st.text_area("", "What tropes feel over‑used?\nWhat excites this audience?")
+questions = [q.strip() for q in qs_text.splitlines() if q.strip()][:5]
 
 if st.button("Run research 🚀"):
+    # reset timer
+    global_start = time.time()
+    start_time_global = global_start  # update for timer fn scope
+
     if not subreddit:
-        st.error("Specify a subreddit."); st.stop()
+        st.error("Please specify a subreddit.")
+        st.stop()
     if not questions:
-        st.error("Enter at least one research question."); st.stop()
+        st.error("Enter at least one research question.")
+        st.stop()
 
-    with st.spinner("⛏️ Fetching threads…"):
-        threads = fetch_threads(subreddit, n_posts, tick)
+    # FETCH & SUMMARISE with progress
+    with st.spinner("⛏️ Fetching threads + comments…"):
+        threads = fetch_threads(subreddit, n_posts, update_timer)
 
-    # Optional raw JSON view before summarising
-    with st.expander("📄 Browse raw Reddit JSON (optional)"):
-        st.json(threads)
+    progress = st.progress(0.0)
+    status_txt = st.empty()
+    with st.spinner("📝 Summarising…"):
+        summarise_threads(threads, progress, status_txt, update_timer)
 
-    prog = st.progress(0.0)
-    status = st.empty()
-    sample = st.empty()
-    with st.spinner("📝 Summarising threads…"):
-        summarise_threads(threads, prog, status, sample, tick)
+    st.success(f"Summarised {len(threads)} threads from r/{subreddit}.")
+    with st.expander("🔍 Gists & insights"):
+        st.json([{"title": t["title"], **t["summary"], "url": t["url"]} for t in threads])
 
-    st.success(f"Summaries ready: {len(threads)} threads from r/{subreddit}")
-    with st.expander("🔍 Gists & insights"):
-                st.json([{"title": t["title"],
+    # Report
+    with st.spinner("🧠 Generating research report…"):
+        report_md = generate_report(threads, questions, update_timer)
+
+    st.markdown("## 📊 Research Report")
+    st.markdown(report_md)
+
+    total_elapsed = time.time() - global_start
+    clock_slot.write(f"{total_elapsed:0.1f} s (done)")
