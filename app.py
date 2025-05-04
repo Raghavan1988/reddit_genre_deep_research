@@ -122,10 +122,10 @@ def generate_report(genre: str, threads: List[Dict], questions: List[str], timer
     prompt = (
         "You are a senior story analyst assisting film *writers* and *producers* who are exploring the "
         f"**{genre.title()}** genre. You have mined Reddit audience discussions. "
-        "First, give a one‑paragraph snapshot of overall audience sentiment for this genre on Reddit. "
+        "First, give a one‑paragraph snapshot of overall audience sentiment for this genre. "
         "Then, answer each research question in its own subsection (≤2 paragraphs each), "
         "adding citations in [Title](URL) form right after every key evidence point. "
-        "Finish with a bold **3‑point ACTIONABLE INSIGHTS** lists one list for script-story writers (what to emphasise / avoid in a script), each with a citation. one list for  movie producers & distributors and one list for directors"
+        "Finish with a bold **3‑point ACTIONABLE INSIGHTS** lists one for script-story writers (what to emphasise / avoid in a script), each with a citation, one for movie producers/ marketers / distributors and one for directors."
     )
 
     msgs = [
@@ -172,18 +172,6 @@ if st.button("Run research 🚀"):
     # FETCH
     with st.spinner("⛏️ Fetching threads + comments…"):
         threads = fetch_threads(subreddit, n_posts, tick)
-
-    # OPTIONAL RAW PREVIEW ──────────────────────────────────────────────────
-    with st.expander("📄 Browse raw posts & comments"):
-        for t in threads:
-            st.markdown(f"### {t['title']}")
-            st.markdown(f"[Open on Reddit]({t['url']}) · *{t['created']}*")
-            if t["body"]:
-                st.markdown(t["body"])
-            if t["comments"]:
-                st.markdown("**Top‑level comments (truncated):**")
-                st.text(t["comments"][:1500] + ("…" if len(t["comments"]) > 1500 else ""))
-            st.markdown("---")
 
     # SUMMARISE
     progress = st.progress(0.0)
