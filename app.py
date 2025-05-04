@@ -125,7 +125,7 @@ def generate_report(genre: str, threads: List[Dict], questions: List[str], timer
         "First, give a one‑paragraph snapshot of overall audience sentiment for this genre. "
         "Then, answer each research question in its own subsection (≤2 paragraphs each), "
         "adding citations in [Title](URL) form right after every key evidence point. "
-        "Finish with a bold **3‑point ACTIONABLE INSIGHTS** lists one for script-story writers (what to emphasise / avoid in a script), each with a citation, one for movie producers/ marketers / distributors and one for directors."
+        "Finish with a bold **list of ACTIONABLE INSIGHTS** lists 3 points for script-story writers (what to emphasise / avoid in a script), each with a citation, 3 points for movie producers/ marketers / distributors and 3 points for directors."
     )
 
     msgs = [
