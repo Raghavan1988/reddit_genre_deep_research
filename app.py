@@ -89,7 +89,7 @@ def summarise_threads(threads: List[Dict], progress_bar, status_slot, sample_slo
         status_slot.markdown(f"**Summarising:** {chunk[0]['title'][:90]}…")
         sample_slot.markdown(random.choice(threads)['title'][:100])
         msgs = [
-            {"role": "system", "content": "You are a research assistant. For each Reddit thread JSON {id:text} return JSON with keys gist (≤25 words), insight1, insight2, sentiment (positive/neutral/negative)."},
+            {"role": "system", "content": "You are a research assistant. For each Reddit thread JSON {id:text} return JSON with keys gist (≤30 words), insight1, insight2, sentiment (positive/neutral/negative)."},
             {"role": "user",   "content": json.dumps(payload)},
         ]
         summaries = json.loads(openai.chat.completions.create(model=model, messages=msgs).choices[0].message.content)
@@ -114,11 +114,13 @@ def generate_report(genre: str, threads: List[Dict], questions: List[str], timer
     q_block = "\n".join(f"Q{i+1}. {q}" for i,q in enumerate(questions))
 
     prompt = (
-        f"You are a senior story analyst focussed on Reddit audience data for **{genre}**. "
-        "First, give a one-paragraph sentiment snapshot. Then, for EACH question provided, answer in ≤2 paragraphs with citations [Title](URL). "
+        f"You are a senior story analyst assisting film writers and producers who are exploring the  **{genre}**. You have mined sub reddit content on Reddit audience data for **{genre}**. "
+        "First, give a one-paragraph overall audience sentiment snapshot for the genre. Then, for EACH question provided, answer in ≤2 paragraphs with citations [Title](URL). "
+        ""It is important to add citations in [Title](URL) form right after every key evidence point. "
         "Afterward, create three separate sections each with **3 actionable insights** (bullet list) backed by evidence: \n" 
         "* For Directors\n* For Storywriters / Script Developers\n* For Producer‑Investors & Marketers.\n" 
         "Conclude with a short 2‑sentence market‑fit summary."
+        "Ensure a Readability sore of 60-70 for the report as measured by Flesch reading ease and write with citations"
     )
 
     msgs = [
