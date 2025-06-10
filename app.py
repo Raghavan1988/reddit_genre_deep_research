@@ -138,7 +138,7 @@ def generate_report(genre: str, threads: List[Dict], questions: List[str], timer
     return resp.choices[0].message.content
 
 # ── UI ──────────────────────────────────────────────────────────────────────
-st.title("🎬 Reddit Audience Intel for Scriptwriters")
+st.title("🎬 Reddit Audience Intel for Scriptwriters - Agent that can mine")
 
 # live digital timer in sidebar
 ticker = st.sidebar.empty()
