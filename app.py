@@ -137,6 +137,25 @@ def generate_report(genre: str, threads: List[Dict], questions: List[str], timer
     timer_cb()
     return resp.choices[0].message.content
 
+# ── PASSWORD PROTECTION ─────────────────────────────────────────────────────
+PASSWORD = "Abiriscool123!"
+
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if not st.session_state["authenticated"]:
+    with st.form("auth_form", clear_on_submit=True):
+        password_input = st.text_input("🔒 Enter Password", type="password")
+        submitted = st.form_submit_button("Submit")
+        if submitted:
+            if password_input == PASSWORD:
+                st.session_state["authenticated"] = True
+                st.success("Access granted. Welcome!")
+                st.experimental_rerun()
+            else:
+                st.error("Incorrect password. Please try again.")
+    st.stop()
+
 # ── UI ──────────────────────────────────────────────────────────────────────
 st.title("🎬 Reddit Audience Intel for Scriptwriters - Agent that can mine")
 
