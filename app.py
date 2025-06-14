@@ -138,7 +138,8 @@ def generate_report(genre: str, threads: List[Dict], questions: List[str], timer
     return resp.choices[0].message.content
 
 # ── PASSWORD PROTECTION ─────────────────────────────────────────────────────
-PASSWORD = "Abiriscool123!"
+PASSWORD1 = "Abiriscool123!"
+PASSWORD2 = "Raghavan"
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -148,7 +149,7 @@ if not st.session_state["authenticated"]:
         password_input = st.text_input("🔒 Enter Password", type="password")
         submitted = st.form_submit_button("Submit")
         if submitted:
-            if password_input == PASSWORD:
+            if password_input == PASSWORD1 or password_input == PASSWORD2:
                 st.session_state["authenticated"] = True
                 st.success("Access granted. Welcome!")
                 st.experimental_rerun()
