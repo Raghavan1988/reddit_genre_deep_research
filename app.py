@@ -15,7 +15,6 @@ import praw
 
 # ── PASSWORD PROTECTION ─────────────────────────────────────────────────────
 st.set_page_config(page_title="Reddit Research", layout="centered")
-st.title("🔒 Enter Password to Access")
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -23,7 +22,7 @@ if "authenticated" not in st.session_state:
 if not st.session_state["authenticated"]:
     pwd = st.text_input("Password", type="password")
     if st.button("Submit"):
-        if pwd == "raghavan":
+        if pwd == "raghavan" or pwd == "Abiriscool123!":
             st.session_state["authenticated"] = True
             st.rerun()
         else:
