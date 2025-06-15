@@ -10,34 +10,35 @@ import os, json, time, random
 from datetime import datetime, timezone
 from typing import List, Dict, Callable
 
-import streamlit as st
-from dotenv import load_dotenv
-import openai
-import praw
+
 
 
 # ── PASSWORD PROTECTION ─────────────────────────────────────────────────────
-PASSWORD1 = "Abiriscool123!"
-PASSWORD2 = "Raghavan"
+import streamlit as st
+
+# ── PASSWORD PROTECTION ─────────────────────────────────────────────────────
+CORRECT_PASSWORDS = {"Abiriscool123!", "Raghavan"}
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
-    with st.form("auth_form", clear_on_submit=True):
-        password_input = st.text_input("🔒 Enter Password", type="password")
+    st.title("🔒 Protected Research App")
+    with st.form("login_form"):
+        password_input = st.text_input("Enter password:", type="password")
         submitted = st.form_submit_button("Submit")
         if submitted:
-            if password_input == PASSWORD1 or password_input == PASSWORD2:
+            if password_input in CORRECT_PASSWORDS:
                 st.session_state["authenticated"] = True
-                st.success("Access granted. Welcome!")
                 st.experimental_rerun()
             else:
-                st.error("Incorrect password. Please try again.")
+                st.error("Incorrect password.")
     st.stop()
 
 
-
+from dotenv import load_dotenv
+import openai
+import praw
 # ── CSS: Verdana 14 pt everywhere ────────────────────────────────────────────
 st.markdown(
     """
