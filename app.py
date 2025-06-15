@@ -16,22 +16,7 @@ from typing import List, Dict, Callable
 # ── PASSWORD PROTECTION ─────────────────────────────────────────────────────
 import streamlit as st
 
-# ── PASSWORD PROTECTION ─────────────────────────────────────────────────────
-CORRECT_PASSWORDS = {"Abiriscool123!", "Raghavan"}
 
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-
-if not st.session_state["authenticated"]:
-    st.title("🔒 Protected Research App")
-    with st.form("login_form"):
-        password_input = st.text_input("Enter password:", type="password")
-        submitted = st.form_submit_button("Submit")
-        if submitted:
-            if password_input in CORRECT_PASSWORDS:
-                st.session_state["authenticated"] = True
-            else:
-                st.error("Incorrect password.")
 
 
 from dotenv import load_dotenv
