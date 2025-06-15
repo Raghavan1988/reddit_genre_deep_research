@@ -16,9 +16,10 @@ from typing import List, Dict, Callable
 # ── PASSWORD PROTECTION ─────────────────────────────────────────────────────
 import streamlit as st
 
+password = st.text_input("Enter Password", type="password")
 
-
-
+if (password != "raghavan"):
+    st.stop()
 from dotenv import load_dotenv
 import openai
 import praw
