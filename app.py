@@ -156,46 +156,48 @@ def tick():
     mins, secs = divmod(int(elapsed), 60)
     ticker.write(f"⏱️ {mins:02d}:{secs:02d}")
 
-col1, col2 = st.columns([2, 1])
-with col1:
-    genre_input = st.text_input("Film/TV genre", value="horror").strip().lower()
-with col2:
-    n_posts = st.slider("Threads", 10, 200, 50, step=10)
+password = st.text_input("Enter Password", type="password")
 
-subreddit = st.text_input("Subreddit", value=GENRE_DEFAULT_SUB.get(genre_input, "movies")).strip()
+if (password == "raghavan"):
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        genre_input = st.text_input("Film/TV genre", value="horror").strip().lower()
+    with col2:
+        n_posts = st.slider("Threads", 10, 200, 50, step=10)
 
-st.markdown("#### Research questions (1‑5, one per line)")
-qs_text = st.text_area("Questions", "What tropes feel over‑used?\nWhat excites this audience?", label_visibility="collapsed")
-questions = [q.strip() for q in qs_text.splitlines() if q.strip()][:5]
+    subreddit = st.text_input("Subreddit", value=GENRE_DEFAULT_SUB.get(genre_input, "movies")).strip()
 
-if st.button("Run research 🚀"):
-    if not subreddit:
-        st.error("Please specify a subreddit.")
-        st.stop()
-    if not questions:
-        st.error("Enter at least one research question.")
-        st.stop()
+    st.markdown("#### Research questions (1‑5, one per line)")
+    qs_text = st.text_area("Questions", "What tropes feel over‑used?\nWhat excites this audience?", label_visibility="collapsed")
+    questions = [q.strip() for q in qs_text.splitlines() if q.strip()][:5]
 
-    # FETCH
-    with st.spinner("⛏️ Fetching threads + comments…"):
-        threads = fetch_threads(subreddit, n_posts, tick)
+    if st.button("Run research 🚀"):
+        if not subreddit:
+            st.error("Please specify a subreddit.")
+            st.stop()
+        if not questions:
+            st.error("Enter at least one research question.")
+            st.stop()
 
-    # SUMMARISE
-    progress = st.progress(0.0)
-    status = st.empty()
-    sample_preview = st.empty()
-    with st.spinner("📝 Summarising…"):
-        summarise_threads(threads, progress, status, sample_preview, tick)
+        # FETCH
+        with st.spinner("⛏️ Fetching threads + comments…"):
+            threads = fetch_threads(subreddit, n_posts, tick)
+            # SUMMARISE
+        progress = st.progress(0.0)
+        status = st.empty()
+        sample_preview = st.empty()
+        with st.spinner("📝 Summarising…"):
+            summarise_threads(threads, progress, status, sample_preview, tick)
 
-    st.success(f"Summarised {len(threads)} threads from r/{subreddit}.")
-    with st.expander("🔍 Gists & insights"):
-        st.json([{"title": t["title"], **t["summary"], "url": t["url"]} for t in threads])
+        st.success(f"Summarised {len(threads)} threads from r/{subreddit}.")
+        with st.expander("🔍 Gists & insights"):
+            st.json([{"title": t["title"], **t["summary"], "url": t["url"]} for t in threads])
 
     # REPORT
-    with st.spinner("🧠 Crafting final report…"):
-        report_md = generate_report(genre_input, threads, questions, tick)
+        with st.spinner("🧠 Crafting final report…"):
+            report_md = generate_report(genre_input, threads, questions, tick)
 
-    st.markdown("## 📊 Audience‑Driven Report")
-    st.markdown(report_md)
+        st.markdown("## 📊 Audience‑Driven Report")
+        st.markdown(report_md)
 
-    tick()  # final update
+        tick()  # final update
