@@ -30,10 +30,8 @@ if not st.session_state["authenticated"]:
         if submitted:
             if password_input in CORRECT_PASSWORDS:
                 st.session_state["authenticated"] = True
-                st.experimental_rerun()
             else:
                 st.error("Incorrect password.")
-    st.stop()
 
 
 from dotenv import load_dotenv
