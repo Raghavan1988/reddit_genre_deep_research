@@ -20,7 +20,7 @@ if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
-    pwd = st.text_input("Password", type="password")
+    pwd = st.text_input("Password (just press enter)", type="password")
     if st.button("Submit"):
         if pwd == "raghavan" or pwd == "" or True:
             st.session_state["authenticated"] = True
