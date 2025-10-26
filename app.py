@@ -1,8 +1,5 @@
-# deep_research_reddit.py (updated)
-# ─────────────────────────────────────────────────────────────────────────────
-# Streamlit assistant for genre‑based Reddit deep research tailored for
-# screen‑writers and producers.
-# ─────────────────────────────────────────────────────────────────────────────
+# deep_research_reddit.py (fixed)
+# Streamlit assistant for genre-based Reddit deep research tailored for screen-writers and producers.
 
 import os, json, time, random
 from datetime import datetime, timezone
@@ -50,7 +47,7 @@ REDDIT_CLIENT_SECRET  = os.getenv("REDDIT_CLIENT_SECRET", "")
 REDDIT_USER_AGENT     = os.getenv("REDDIT_USER_AGENT", "DeepResearch/0.1")
 
 if not all([openai.api_key, REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET]):
-    st.error("🚨 Set your OpenAI & Reddit credentials via env‑vars or a .env file.")
+    st.error("🚨 Set your OpenAI & Reddit credentials via env-vars or a .env file.")
     st.stop()
 
 # ── REDDIT CLIENT ────────────────────────────────────────────────────────────
@@ -125,28 +122,20 @@ def summarise_threads(threads: List[Dict], progress_bar, status_slot, sample_slo
         time.sleep(0.5)
     status_slot.markdown("**Summarising complete!**")
 
-# CHANGED: generate_report now accepts a (resolved) user-provided prompt (with fallback) and concatenates the genre instruction
-
 def generate_report(genre: str, threads: List[Dict], questions: List[str], user_prompt: str, timer_cb: Callable[[], None]) -> str:
-    corpus = "
-
-".join(
+    corpus = "\n\n".join(
         f"{t['title']} – {t['summary'].get('gist','')} [URL]({t['url']})" for t in threads
     )[:15000]
 
-    q_block = "
-".join(f"Q{i+1}. {q}" for i, q in enumerate(questions))
+    q_block = "\n".join(f"Q{i+1}. {q}" for i, q in enumerate(questions))
 
-    # User override prompt construction per requirements (user_prompt already resolved with fallback by caller)
     prompt = (
-        f"You are doing research on: **{genre.title()}**. "
-        + (user_prompt or "")
+        f"You are doing research on: **{genre.title()}**. " + (user_prompt or "")
     )
 
     msgs = [
         {"role": "system", "content": prompt},
-        {"role": "assistant", "content": f"CORPUS ({len(threads)} threads):
-{corpus}"},
+        {"role": "assistant", "content": f"CORPUS ({len(threads)} threads):\n{corpus}"},
         {"role": "user", "content": q_block},
     ]
     resp = openai.chat.completions.create(model="gpt-4o", messages=msgs)
@@ -172,14 +161,13 @@ with col2:
 
 subreddit = st.text_input("Subreddit", value="horror").strip()
 
-st.markdown("#### Research questions (1‑5, one per line)")
-qs_text = st.text_area("Questions", "What tropes feel over‑used?\nWhat excites this audience?", label_visibility="collapsed")
+st.markdown("#### Research questions (1-5, one per line)")
+qs_text = st.text_area("Questions", "What tropes feel over-used?\nWhat excites this audience?", label_visibility="collapsed")
 questions = [q.strip() for q in qs_text.splitlines() if q.strip()][:5]
 
-# NEW: Custom prompt override input (with fallback to default if left blank)
 st.markdown("#### Custom report prompt (override)")
 default_prompt_hint = (
-    "First, give a one‑paragraph snapshot of overall audience sentiment for this topic. "
+    "First, give a one-paragraph snapshot of overall audience sentiment for this topic. "
     "Then, answer each research question in its own subsection (≤2 paragraphs each), "
     "adding citations in [Title](URL) form right after every key evidence point. "
     "Finish with a bold **list of ACTIONABLE INSIGHTS** with 3 points for business executives (what to emphasise / avoid in a script), each with a citation."
@@ -189,7 +177,6 @@ user_prompt_input = st.text_area(
     value=default_prompt_hint,
     height=140,
 )
-# If the user clears the box, fall back to the default prompt
 resolved_prompt = (user_prompt_input.strip() or default_prompt_hint)
 
 if st.button("Run research 🚀"):
@@ -201,9 +188,7 @@ if st.button("Run research 🚀"):
         st.stop()
 
     with st.spinner("⛏️ Fetching threads + comments…"):
-        # Keep a separate copy BEFORE summaries for raw Reddit response download
         raw_threads = fetch_threads(subreddit, n_posts, tick)
-        # Work on a mutable copy for summarization and reporting
         threads = json.loads(json.dumps(raw_threads))
 
     progress = st.progress(0.0)
@@ -219,10 +204,9 @@ if st.button("Run research 🚀"):
     with st.spinner("🧠 Crafting final report…"):
         report_md = generate_report(genre_input, threads, questions, resolved_prompt, tick)
 
-    st.markdown("## 📊 Audience‑Driven Report")
+    st.markdown("## 📊 Audience-Driven Report")
     st.markdown(report_md)
 
-    # NEW: Download buttons
     st.markdown("---")
     st.subheader("⬇️ Downloads")
 
