@@ -22,7 +22,7 @@ if "authenticated" not in st.session_state:
 if not st.session_state["authenticated"]:
     pwd = st.text_input("Password (just press enter)", type="password")
     if st.button("Submit"):
-        if pwd == "raghavan" or pwd == "" or True:
+        if pwd == "abir" or pwd == "" or True:
             st.session_state["authenticated"] = True
             st.rerun()
         else:
@@ -88,7 +88,7 @@ def fetch_threads(sub: str, limit: int, timer_cb: Callable[[], None]) -> List[Di
         timer_cb()
     return threads
 
-def summarise_threads(threads: List[Dict], progress_bar, status_slot, sample_slot, timer_cb: Callable[[], None], model: str = "o3", batch: int = 6) -> None:
+def summarise_threads(threads: List[Dict], progress_bar, status_slot, sample_slot, timer_cb: Callable[[], None], model: str = "gpt-4o", batch: int = 6) -> None:
     total = len(threads)
     done = 0
     for i in range(0, total, batch):
@@ -105,14 +105,18 @@ def summarise_threads(threads: List[Dict], progress_bar, status_slot, sample_slo
             {
                 "role": "system",
                 "content": (
-                    "You are a movie buff, who is a storyline research assistant trying to understand what today's audience want from the story. Infer what redditors want from storylines of this genre. For each Reddit thread JSON {id:text} return JSON with keys "
+                    "Summarize the Reddit thread. Extract atleast 2 key insights and assess overall sentiment (positive/negative/neutral/mixed). Focus on main discussion points and community mood. Output JSON . For each Reddit thread JSON {id:text} return JSON with keys "
                     "gist (50 words), insight1, insight2, sentiment (positive/neutral/negative)."
                 ),
             },
             {"role": "user", "content": json.dumps(payload)},
         ]
         resp = openai.chat.completions.create(model=model, messages=msgs)
-        summaries = json.loads(resp.choices[0].message.content)
+        summaries = {}
+        try:
+            summaries = json.loads(resp.choices[0].message.content)
+        except:
+            print("Json exception")
         for t in chunk:
             t["summary"] = summaries.get(t["id"], {})
         done += len(chunk)
@@ -129,12 +133,12 @@ def generate_report(genre: str, threads: List[Dict], questions: List[str], timer
     q_block = "\n".join(f"Q{i+1}. {q}" for i, q in enumerate(questions))
 
     prompt = (
-        "You are a senior story analyst assisting film *writers* and *producers* who are exploring the "
-        f"**{genre.title()}** genre. You have mined Reddit audience discussions. "
-        "First, give a one‑paragraph snapshot of overall audience sentiment for this genre. "
+        "You are a senior analyst and researcher assisting business executives who are exploring the "
+        f"**{genre.title()}** topic. You have mined Reddit community and audience discussions. "
+        "First, give a one‑paragraph snapshot of overall audience sentiment for this topic. "
         "Then, answer each research question in its own subsection (≤2 paragraphs each), "
         "adding citations in [Title](URL) form right after every key evidence point. "
-        "Finish with a bold **list of ACTIONABLE INSIGHTS** lists 3 points for script-story writers (what to emphasise / avoid in a script), each with a citation, 3 points for movie producers/ marketers / distributors and 3 points for directors."
+        "Finish with a bold **list of ACTIONABLE INSIGHTS** lists 3 points for business executives (what to emphasise / avoid in a script), each with a citation."
     )
 
     msgs = [
@@ -142,12 +146,12 @@ def generate_report(genre: str, threads: List[Dict], questions: List[str], timer
         {"role": "assistant", "content": f"CORPUS ({len(threads)} threads):\n{corpus}"},
         {"role": "user", "content": q_block},
     ]
-    resp = openai.chat.completions.create(model="o3", messages=msgs)
+    resp = openai.chat.completions.create(model="gpt-4o", messages=msgs)
     timer_cb()
     return resp.choices[0].message.content
 
 # ── UI ──────────────────────────────────────────────────────────────────────
-st.title("🎬 Reddit Audience Intel for Scriptwriters - Agent that can mine")
+st.title("generalized reddit data extractor & analytics")
 
 ticker = st.sidebar.empty()
 start_time = time.time()
@@ -158,11 +162,11 @@ def tick():
 
 col1, col2 = st.columns([2, 1])
 with col1:
-    genre_input = st.text_input("Film/TV genre", value="horror").strip().lower()
+    genre_input = st.text_input("Film/TV genre or enter the topic you want to research about", value="horror").strip().lower()
 with col2:
     n_posts = st.slider("Threads", 10, 200, 50, step=10)
 
-subreddit = st.text_input("Subreddit", value=GENRE_DEFAULT_SUB.get(genre_input, "movies")).strip()
+subreddit = st.text_input("Subreddit", value="horror").strip()
 
 st.markdown("#### Research questions (1‑5, one per line)")
 qs_text = st.text_area("Questions", "What tropes feel over‑used?\nWhat excites this audience?", label_visibility="collapsed")
@@ -182,10 +186,10 @@ if st.button("Run research 🚀"):
     progress = st.progress(0.0)
     status = st.empty()
     sample_preview = st.empty()
-    with st.spinner("📝 Summarising…"):
+    with st.spinner("📝 Summarizing…"):
         summarise_threads(threads, progress, status, sample_preview, tick)
 
-    st.success(f"Summarised {len(threads)} threads from r/{subreddit}.")
+    st.success(f"Summarized {len(threads)} threads from r/{subreddit}.")
     with st.expander("🔍 Gists & insights"):
         st.json([{"title": t["title"], **t["summary"], "url": t["url"]} for t in threads])
 
