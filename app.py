@@ -1,7 +1,7 @@
-# deep_research_reddit.py (fixed)
+# deep_research_reddit.py (stateful, single-zip download, empty prompt override)
 # Streamlit assistant for genre-based Reddit deep research tailored for screen-writers and producers.
 
-import os, json, time, random
+import os, json, time, random, io, zipfile
 from datetime import datetime, timezone
 from typing import List, Dict, Callable
 
@@ -129,9 +129,18 @@ def generate_report(genre: str, threads: List[Dict], questions: List[str], user_
 
     q_block = "\n".join(f"Q{i+1}. {q}" for i, q in enumerate(questions))
 
-    prompt = (
-        f"You are doing research on: **{genre.title()}**. " + (user_prompt or "")
-    )
+    # If user_prompt is empty, use the original default prompt verbatim
+    if not user_prompt.strip():
+        prompt = (
+            "You are a senior analyst and researcher assisting business executives who are exploring the "
+            f"**{genre.title()}** topic. You have mined Reddit community and audience discussions. "
+            "First, give a one-paragraph snapshot of overall audience sentiment for this topic. "
+            "Then, answer each research question in its own subsection (≤2 paragraphs each), "
+            "adding citations in [Title](URL) form right after every key evidence point. "
+            "Finish with a bold **list of ACTIONABLE INSIGHTS** lists 3 points for business executives (what to emphasise / avoid in a script), each with a citation."
+        )
+    else:
+        prompt = f"You are doing research on: **{genre.title()}** topic. " + user_prompt.strip()
 
     msgs = [
         {"role": "system", "content": prompt},
@@ -165,21 +174,18 @@ st.markdown("#### Research questions (1-5, one per line)")
 qs_text = st.text_area("Questions", "What tropes feel over-used?\nWhat excites this audience?", label_visibility="collapsed")
 questions = [q.strip() for q in qs_text.splitlines() if q.strip()][:5]
 
+# Empty prompt override (no default text shown)
 st.markdown("#### Custom report prompt (override)")
-default_prompt_hint = (
-    "First, give a one-paragraph snapshot of overall audience sentiment for this topic. "
-    "Then, answer each research question in its own subsection (≤2 paragraphs each), "
-    "adding citations in [Title](URL) form right after every key evidence point. "
-    "Finish with a bold **list of ACTIONABLE INSIGHTS** with 3 points for business executives (what to emphasise / avoid in a script), each with a citation."
-)
 user_prompt_input = st.text_area(
     "Write your own instructions for how to craft the final report.",
-    value=default_prompt_hint,
+    value="",
     height=140,
 )
-resolved_prompt = (user_prompt_input.strip() or default_prompt_hint)
 
-if st.button("Run research 🚀"):
+# ── Run pipeline and persist to session state ───────────────────────────────
+run_clicked = st.button("Run research 🚀")
+
+if run_clicked:
     if not subreddit:
         st.error("Please specify a subreddit.")
         st.stop()
@@ -189,7 +195,7 @@ if st.button("Run research 🚀"):
 
     with st.spinner("⛏️ Fetching threads + comments…"):
         raw_threads = fetch_threads(subreddit, n_posts, tick)
-        threads = json.loads(json.dumps(raw_threads))
+        threads = json.loads(json.dumps(raw_threads))  # safe copy for summaries
 
     progress = st.progress(0.0)
     status = st.empty()
@@ -197,32 +203,48 @@ if st.button("Run research 🚀"):
     with st.spinner("📝 Summarizing…"):
         summarise_threads(threads, progress, status, sample_preview, tick)
 
-    st.success(f"Summarized {len(threads)} threads from r/{subreddit}.")
-    with st.expander("🔍 Gists & insights"):
-        st.json([{"title": t["title"], **t.get("summary", {}), "url": t["url"]} for t in threads])
-
     with st.spinner("🧠 Crafting final report…"):
-        report_md = generate_report(genre_input, threads, questions, resolved_prompt, tick)
+        report_md = generate_report(genre_input, threads, questions, user_prompt_input, tick)
+
+    # Persist results to session so a rerun (e.g., after download) does NOT lose state
+    st.session_state["raw_threads"] = raw_threads
+    st.session_state["threads"] = threads
+    st.session_state["report_md"] = report_md
+    st.session_state["subreddit_val"] = subreddit
+    st.session_state["genre_val"] = genre_input
+
+# ── Render results if present in state ───────────────────────────────────────
+if "report_md" in st.session_state and "threads" in st.session_state:
+    st.success(f"Summarized {len(st.session_state['threads'])} threads from r/{st.session_state['subreddit_val']}.")
+    with st.expander("🔍 Gists & insights"):
+        st.json([
+            {"title": t["title"], **t.get("summary", {}), "url": t["url"]}
+            for t in st.session_state["threads"]
+        ])
 
     st.markdown("## 📊 Audience-Driven Report")
-    st.markdown(report_md)
+    st.markdown(st.session_state["report_md"])
+
+    # Build a ZIP containing both files for a single-button download
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    json_name = f"reddit_{st.session_state['subreddit_val']}_{ts}.json"
+    md_name = f"report_{st.session_state['genre_val']}_{ts}.md"
+
+    reddit_json_str = json.dumps(st.session_state["raw_threads"], ensure_ascii=False, indent=2)
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(json_name, reddit_json_str)
+        zf.writestr(md_name, st.session_state["report_md"])
+    zip_buffer.seek(0)
 
     st.markdown("---")
-    st.subheader("⬇️ Downloads")
-
-    reddit_json_str = json.dumps(raw_threads, ensure_ascii=False, indent=2)
+    st.subheader("⬇️ Download results")
     st.download_button(
-        label="Download Reddit response (JSON)",
-        data=reddit_json_str,
-        file_name=f"reddit_{subreddit}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-        mime="application/json",
-    )
-
-    st.download_button(
-        label="Download final report (.md)",
-        data=report_md,
-        file_name=f"report_{genre_input}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
-        mime="text/markdown",
+        label="Download JSON + Markdown (.zip)",
+        data=zip_buffer.getvalue(),
+        file_name=f"reddit_research_{ts}.zip",
+        mime="application/zip",
     )
 
     tick()
